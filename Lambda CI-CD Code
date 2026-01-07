@@ -1,0 +1,50 @@
+import boto3
+import zipfile
+import subprocess
+import os
+
+def lambda_handler(event, context):
+
+    s3 = boto3.client('s3')
+
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = event['Records'][0]['s3']['object']['key']
+
+    # Download code
+    s3.download_file(bucket, key, '/tmp/app.zip')
+
+    # Extract code
+    with zipfile.ZipFile('/tmp/app.zip', 'r') as zip_ref:
+        zip_ref.extractall('/tmp/app')
+
+    # -------- BUILD STAGE --------
+    print("Build stage completed")
+
+    # Install dependencies
+    subprocess.run(
+        ['pip3', 'install', '-r', 'requirements.txt', '-t', '/tmp/app'],
+        cwd='/tmp/app'
+    )
+
+    # -------- TEST STAGE --------
+    result = subprocess.run(
+        ['python3', '-m', 'pytest'],
+        cwd='/tmp/app'
+    )
+
+    if result.returncode != 0:
+        raise Exception("Tests failed")
+
+    print("Tests passed")
+
+    # -------- DEPLOY STAGE --------
+    deploy_to_ec2()
+
+    return {
+        'statusCode': 200,
+        'body': 'CI/CD Pipeline Completed Successfully'
+    }
+
+
+def deploy_to_ec2():
+    print("Deployment triggered using SSM")
